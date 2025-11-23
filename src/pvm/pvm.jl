@@ -2061,6 +2061,11 @@ function execute(program::Vector{UInt8}, input::Vector{UInt8}, gas::UInt64, cont
     registers[8] = TWO_32 - UInt64(ZONE_SIZE) - UInt64(MAX_INPUT)  # r7 (input address)
     registers[9] = UInt64(length(input))  # r8 = input length per graypaper
 
+    # Debug: print initial register values to verify fix is applied
+    # Version marker: FIX_V2 - if you don't see this, restart Julia to reload modules
+    println("  [PVM INIT FIX_V2] TWO_32=0x$(string(TWO_32, base=16)), heap_base=0x$(string(heap_base, base=16))")
+    println("  [PVM INIT FIX_V2] r6=0x$(string(registers[7], base=16)), r7=0x$(string(registers[8], base=16)), r8=$(registers[9])")
+
     # initialize state
     state = PVMState(
         start_pc,  # pc starts at entry point
