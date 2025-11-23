@@ -371,10 +371,14 @@ function process_accumulate(
         end
 
         if has_unmet_prereqs
-            # Queue to ready_queue (add to current slot = slot 11 after shifting)
+            # Queue to ready_queue (add to current slot = slot 12 after shifting)
+            # Format: {report: json_report, dependencies: prerequisites}
             println("  [QUEUE] Report has unmet prerequisites, queuing to ready_queue")
             if length(new_ready_queue) >= 12 && new_ready_queue[12] === nothing
-                new_ready_queue[12] = json_report
+                new_ready_queue[12] = Dict(
+                    :report => json_report,
+                    :dependencies => report.prerequisites
+                )
             end
             continue
         end
@@ -436,7 +440,13 @@ function process_accumulate(
         end
 
         # Check if this queued item's dependencies are now satisfied
-        queued_report = parse_work_report(queued_item)
+        # Handle both wrapped format {report, dependencies} and raw format
+        raw_report = if haskey(queued_item, :report)
+            queued_item[:report]
+        else
+            queued_item
+        end
+        queued_report = parse_work_report(raw_report)
         all_deps_satisfied = true
         for prereq in queued_report.prerequisites
             prereq_bytes = prereq isa String ? parse_hex(prereq) : prereq
