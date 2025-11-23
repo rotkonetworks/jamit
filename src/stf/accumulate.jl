@@ -391,51 +391,48 @@ function process_accumulate(
         end
 
         # Process each work result in the report
+        report_had_success = false
         for work_result in report.results
-            # Get service account
             if !haskey(new_accounts, work_result.service_id)
-                # Service doesn't exist - skip
                 println("  [SKIP] Service $(work_result.service_id) not in accounts")
                 continue
             end
 
             account = new_accounts[work_result.service_id]
-
-            # Verify code hash matches
             if account.code_hash != work_result.code_hash
-                # Code hash mismatch - skip
                 println("  [SKIP] Code hash mismatch for service $(work_result.service_id)")
                 println("    Account: $(bytes2hex(account.code_hash))")
                 println("    Work:    $(bytes2hex(work_result.code_hash))")
                 continue
             end
 
-            # Execute PVM accumulate invocation
             updated_account, updated_accounts, success, gas_used = execute_accumulate(work_result, report, account, state, slot)
-            if success
-                # Merge updated accounts (includes deletions from EJECT)
-                new_accounts = updated_accounts
-                new_accounts[work_result.service_id] = updated_account
+            if !success
+                continue
+            end
 
-                # Track statistics
-                sid = work_result.service_id
-                if !haskey(service_stats, sid)
-                    service_stats[sid] = Dict{Symbol, UInt64}(
-                        :accumulate_count => 0,
-                        :accumulate_gas_used => 0
-                    )
-                end
-                service_stats[sid][:accumulate_count] += 1
-                service_stats[sid][:accumulate_gas_used] += gas_used
+            # Merge updated accounts
+            new_accounts = updated_accounts
+            new_accounts[work_result.service_id] = updated_account
+            report_had_success = true
 
-                # Track processed hash for dependency resolution
-                push!(processed_hashes, report.package_hash)
+            # Track statistics
+            sid = work_result.service_id
+            if !haskey(service_stats, sid)
+                service_stats[sid] = Dict{Symbol, UInt64}(
+                    :accumulate_count => 0,
+                    :accumulate_gas_used => 0
+                )
+            end
+            service_stats[sid][:accumulate_count] += 1
+            service_stats[sid][:accumulate_gas_used] += gas_used
+        end
 
-                # Add package hash to current accumulated slot (slot 12 after shifting)
-                # Format: hex string of package hash
-                if length(new_accumulated) >= 12
-                    push!(new_accumulated[12], "0x" * bytes2hex(report.package_hash))
-                end
+        # Add to accumulated once per report (if any result succeeded)
+        if report_had_success
+            push!(processed_hashes, report.package_hash)
+            if length(new_accumulated) >= 12
+                push!(new_accumulated[12], "0x" * bytes2hex(report.package_hash))
             end
         end
     end
@@ -463,45 +460,49 @@ function process_accumulate(
             end
         end
 
-        if all_deps_satisfied
-            println("  [UNLOCK] Processing unlocked queued item from slot $slot_idx")
-            # Remove from queue
-            new_ready_queue[slot_idx] = nothing
+        if !all_deps_satisfied
+            continue
+        end
 
-            # Process each work result
-            for work_result in queued_report.results
-                if !haskey(new_accounts, work_result.service_id)
-                    continue
-                end
+        println("  [UNLOCK] Processing unlocked queued item from slot $slot_idx")
+        new_ready_queue[slot_idx] = nothing
 
-                account = new_accounts[work_result.service_id]
-                if account.code_hash != work_result.code_hash
-                    continue
-                end
+        # Process each work result
+        queued_had_success = false
+        for work_result in queued_report.results
+            if !haskey(new_accounts, work_result.service_id)
+                continue
+            end
+            account = new_accounts[work_result.service_id]
+            if account.code_hash != work_result.code_hash
+                continue
+            end
 
-                updated_account, updated_accounts, success, gas_used = execute_accumulate(work_result, queued_report, account, state, slot)
-                if success
-                    new_accounts = updated_accounts
-                    new_accounts[work_result.service_id] = updated_account
+            updated_account, updated_accounts, success, gas_used = execute_accumulate(work_result, queued_report, account, state, slot)
+            if !success
+                continue
+            end
 
-                    sid = work_result.service_id
-                    if !haskey(service_stats, sid)
-                        service_stats[sid] = Dict{Symbol, UInt64}(
-                            :accumulate_count => 0,
-                            :accumulate_gas_used => 0
-                        )
-                    end
-                    service_stats[sid][:accumulate_count] += 1
-                    service_stats[sid][:accumulate_gas_used] += gas_used
+            new_accounts = updated_accounts
+            new_accounts[work_result.service_id] = updated_account
+            queued_had_success = true
 
-                    # Also track this hash for cascading unlocks
-                    push!(processed_hashes, queued_report.package_hash)
+            sid = work_result.service_id
+            if !haskey(service_stats, sid)
+                service_stats[sid] = Dict{Symbol, UInt64}(
+                    :accumulate_count => 0,
+                    :accumulate_gas_used => 0
+                )
+            end
+            service_stats[sid][:accumulate_count] += 1
+            service_stats[sid][:accumulate_gas_used] += gas_used
+        end
 
-                    # Add package hash to current accumulated slot
-                    if length(new_accumulated) >= 12
-                        push!(new_accumulated[12], "0x" * bytes2hex(queued_report.package_hash))
-                    end
-                end
+        # Add to accumulated once per report
+        if queued_had_success
+            push!(processed_hashes, queued_report.package_hash)
+            if length(new_accumulated) >= 12
+                push!(new_accumulated[12], "0x" * bytes2hex(queued_report.package_hash))
             end
         end
     end
