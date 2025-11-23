@@ -142,7 +142,54 @@ function compare_states(expected::State, actual::State)::Bool
         end
     end
 
-    # TODO: Compare privileges, accumulated, ready_queue, statistics, etc.
+    # Compare privileges
+    if expected.privileges != actual.privileges
+        println("  ❌ Privileges mismatch:")
+        println("     Expected bless: $(expected.privileges.bless), Got: $(actual.privileges.bless)")
+        println("     Expected assign: $(expected.privileges.assign), Got: $(actual.privileges.assign)")
+        println("     Expected designate: $(expected.privileges.designate), Got: $(actual.privileges.designate)")
+        all_match = false
+    else
+        println("  ✓ Privileges match")
+    end
+
+    # Compare accumulated
+    if expected.accumulated != actual.accumulated
+        println("  ❌ Accumulated mismatch:")
+        println("     Expected $(length(expected.accumulated)) entries, got $(length(actual.accumulated)) entries")
+        for (service_id, expected_blob) in expected.accumulated
+            if haskey(actual.accumulated, service_id)
+                if expected_blob != actual.accumulated[service_id]
+                    println("     Service $service_id: blob mismatch")
+                end
+            else
+                println("     Service $service_id: missing in actual")
+            end
+        end
+        all_match = false
+    else
+        println("  ✓ Accumulated matches")
+    end
+
+    # Compare ready_queue
+    if expected.ready_queue != actual.ready_queue
+        println("  ❌ Ready queue mismatch:")
+        println("     Expected $(length(expected.ready_queue)) slots")
+        println("     Got $(length(actual.ready_queue)) slots")
+        all_match = false
+    else
+        println("  ✓ Ready queue matches")
+    end
+
+    # Compare statistics
+    if expected.statistics != actual.statistics
+        println("  ❌ Statistics mismatch:")
+        println("     Expected $(length(expected.statistics)) entries")
+        println("     Got $(length(actual.statistics)) entries")
+        all_match = false
+    else
+        println("  ✓ Statistics match")
+    end
 
     if all_match
         println("\n✅ States match perfectly!")
