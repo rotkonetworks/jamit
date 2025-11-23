@@ -2297,6 +2297,8 @@ function setup_memory!(state::PVMState, input::Vector{UInt8}, ro_data::Vector{UI
     for page in div(input_start, PAGE_SIZE):div(input_start + length(input), PAGE_SIZE)
         state.memory.access[page + 1] = WRITE
     end
+    println("  [MEM SETUP] Input region setup complete")
+    flush(stdout)
 
     # Stack region: below input, per graypaper SP = 2^32 - 2*ZONE_SIZE - MAX_INPUT
     stack_top = UInt32(UInt64(2^32) - UInt64(2)*UInt64(ZONE_SIZE) - UInt64(MAX_INPUT))
@@ -2354,6 +2356,7 @@ function setup_memory!(state::PVMState, input::Vector{UInt8}, ro_data::Vector{UI
     val56 = sum(UInt64(state.memory.data[sp + 56 + i + 1]) << (8*i) for i in 0:7)
     println("  [STACK INIT] SP=0x$(string(sp, base=16))")
     println("  [STACK INIT] [SP+40]=0x$(string(val40, base=16)), [SP+48]=0x$(string(val48, base=16)), [SP+56]=$val56")
+    flush(stdout)
 end
 
 function extract_output(state::PVMState)
