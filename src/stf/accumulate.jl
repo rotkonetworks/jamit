@@ -332,23 +332,30 @@ function process_accumulate(
             end
 
             # Execute PVM accumulate invocation
-            # println("  [ACCUMULATE] Processing queued work for service $(work_result.service_id)")
             updated_account, updated_accounts, success, gas_used = execute_accumulate(work_result, parsed_report, account, state, slot)
-            if success
-                # Merge updated accounts (includes deletions from EJECT)
-                new_accounts = updated_accounts
-                new_accounts[work_result.service_id] = updated_account
+            if !success
+                continue
+            end
 
-                # Track statistics for queued items too
-                sid = work_result.service_id
-                if !haskey(service_stats, sid)
-                    service_stats[sid] = Dict{Symbol, UInt64}(
-                        :accumulate_count => 0,
-                        :accumulate_gas_used => 0
-                    )
-                end
-                service_stats[sid][:accumulate_count] += 1
-                service_stats[sid][:accumulate_gas_used] += gas_used
+            # Merge updated accounts
+            new_accounts = updated_accounts
+            new_accounts[work_result.service_id] = updated_account
+
+            # Track statistics
+            sid = work_result.service_id
+            if !haskey(service_stats, sid)
+                service_stats[sid] = Dict{Symbol, UInt64}(
+                    :accumulate_count => 0,
+                    :accumulate_gas_used => 0
+                )
+            end
+            service_stats[sid][:accumulate_count] += 1
+            service_stats[sid][:accumulate_gas_used] += gas_used
+
+            # Track hash and accumulated
+            push!(processed_hashes, parsed_report.package_hash)
+            if length(new_accumulated) >= 12
+                push!(new_accumulated[12], "0x" * bytes2hex(parsed_report.package_hash))
             end
         end
     end
