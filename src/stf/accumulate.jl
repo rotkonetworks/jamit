@@ -287,6 +287,9 @@ function process_accumulate(
     # Track statistics for this block
     service_stats = Dict{ServiceId, Dict{Symbol, UInt64}}()
 
+    # Track processed package hashes for dependency resolution
+    processed_hashes = Set{Vector{UInt8}}()
+
     # Process ready_queue items with no dependencies
     # Ready queue contains work reports that were previously queued due to unmet prerequisites
     for queued_item in state.ready_queue
@@ -358,10 +361,21 @@ function process_accumulate(
         println("  [DEBUG] Report $ri: $(length(report.results)) results, $(length(report.prerequisites)) prerequisites")
 
         # Check if report has unmet prerequisites
-        # TODO: implement proper prerequisite checking against state
-        # For now, if prerequisites exist, skip processing (queue to ready_queue)
-        if length(report.prerequisites) > 0
-            # println("  [ACCUMULATE] Skipping report with $(length(report.prerequisites)) prerequisites (should be queued)")
+        has_unmet_prereqs = false
+        for prereq in report.prerequisites
+            prereq_bytes = prereq isa String ? parse_hex(prereq) : prereq
+            if !(prereq_bytes in processed_hashes)
+                has_unmet_prereqs = true
+                break
+            end
+        end
+
+        if has_unmet_prereqs
+            # Queue to ready_queue (add to current slot = slot 11 after shifting)
+            println("  [QUEUE] Report has unmet prerequisites, queuing to ready_queue")
+            if length(new_ready_queue) >= 12 && new_ready_queue[12] === nothing
+                new_ready_queue[12] = json_report
+            end
             continue
         end
 
@@ -402,6 +416,64 @@ function process_accumulate(
                 end
                 service_stats[sid][:accumulate_count] += 1
                 service_stats[sid][:accumulate_gas_used] += gas_used
+
+                # Track processed hash for dependency resolution
+                push!(processed_hashes, report.package_hash)
+            end
+        end
+    end
+
+    # Check ready_queue for items that can now be processed (dependencies satisfied)
+    for (slot_idx, queued_item) in enumerate(new_ready_queue)
+        if queued_item === nothing
+            continue
+        end
+
+        # Check if this queued item's dependencies are now satisfied
+        queued_report = parse_work_report(queued_item)
+        all_deps_satisfied = true
+        for prereq in queued_report.prerequisites
+            prereq_bytes = prereq isa String ? parse_hex(prereq) : prereq
+            if !(prereq_bytes in processed_hashes)
+                all_deps_satisfied = false
+                break
+            end
+        end
+
+        if all_deps_satisfied
+            println("  [UNLOCK] Processing unlocked queued item from slot $slot_idx")
+            # Remove from queue
+            new_ready_queue[slot_idx] = nothing
+
+            # Process each work result
+            for work_result in queued_report.results
+                if !haskey(new_accounts, work_result.service_id)
+                    continue
+                end
+
+                account = new_accounts[work_result.service_id]
+                if account.code_hash != work_result.code_hash
+                    continue
+                end
+
+                updated_account, updated_accounts, success, gas_used = execute_accumulate(work_result, queued_report, account, state, slot)
+                if success
+                    new_accounts = updated_accounts
+                    new_accounts[work_result.service_id] = updated_account
+
+                    sid = work_result.service_id
+                    if !haskey(service_stats, sid)
+                        service_stats[sid] = Dict{Symbol, UInt64}(
+                            :accumulate_count => 0,
+                            :accumulate_gas_used => 0
+                        )
+                    end
+                    service_stats[sid][:accumulate_count] += 1
+                    service_stats[sid][:accumulate_gas_used] += gas_used
+
+                    # Also track this hash for cascading unlocks
+                    push!(processed_hashes, queued_report.package_hash)
+                end
             end
         end
     end

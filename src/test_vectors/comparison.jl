@@ -153,17 +153,13 @@ function compare_states(expected::State, actual::State)::Bool
         println("  ✓ Privileges match")
     end
 
-    # Compare accumulated
+    # Compare accumulated (array of 12 slots)
     if expected.accumulated != actual.accumulated
         println("  ❌ Accumulated mismatch:")
-        println("     Expected $(length(expected.accumulated)) entries, got $(length(actual.accumulated)) entries")
-        for (service_id, expected_blob) in expected.accumulated
-            if haskey(actual.accumulated, service_id)
-                if expected_blob != actual.accumulated[service_id]
-                    println("     Service $service_id: blob mismatch")
-                end
-            else
-                println("     Service $service_id: missing in actual")
+        println("     Expected $(length(expected.accumulated)) slots, got $(length(actual.accumulated)) slots")
+        for i in 1:min(length(expected.accumulated), length(actual.accumulated))
+            if expected.accumulated[i] != actual.accumulated[i]
+                println("     Slot $i: expected $(length(expected.accumulated[i])) items, got $(length(actual.accumulated[i])) items")
             end
         end
         all_match = false
