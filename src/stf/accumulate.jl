@@ -419,6 +419,12 @@ function process_accumulate(
 
                 # Track processed hash for dependency resolution
                 push!(processed_hashes, report.package_hash)
+
+                # Add package hash to current accumulated slot (slot 12 after shifting)
+                # Format: hex string of package hash
+                if length(new_accumulated) >= 12
+                    push!(new_accumulated[12], "0x" * bytes2hex(report.package_hash))
+                end
             end
         end
     end
@@ -473,6 +479,11 @@ function process_accumulate(
 
                     # Also track this hash for cascading unlocks
                     push!(processed_hashes, queued_report.package_hash)
+
+                    # Add package hash to current accumulated slot
+                    if length(new_accumulated) >= 12
+                        push!(new_accumulated[12], "0x" * bytes2hex(queued_report.package_hash))
+                    end
                 end
             end
         end
