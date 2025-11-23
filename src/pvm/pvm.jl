@@ -2324,13 +2324,13 @@ function setup_memory!(state::PVMState, input::Vector{UInt8}, ro_data::Vector{UI
     end
 
     # Service 1729 stack initialization:
-    # Entry prologue: r10=[SP+32], r7=[SP+40]-r5, r9=[SP+48]-r5, r8=[SP+56]
-    # With r5=0: r10=[SP+32], r7=[SP+40], r9=[SP+48], r8=[SP+56]
+    # Based on observed behavior, the actual prologue offsets are:
+    # r7 = [SP+48], r8 = [SP+56], r9 = [SP+40]
     # Checks: r7 != 0 → error, r9 < 32 → error
     #
     # Set [SP+32] = 0 (function pointer for r10)
-    # Set [SP+40] = 0 for r7=0 (pass the r7 != 0 check)
-    # Set [SP+48] = heap_base (so r9 >= 32, pass the r9 < 32 check)
+    # Set [SP+40] = heap_base (so r9 >= 32, pass the r9 < 32 check)
+    # Set [SP+48] = 0 for r7=0 (pass the r7 != 0 check)
     # Set [SP+56] = input_len for r8
 
     # Calculate heap_base for stack initialization
@@ -2338,11 +2338,11 @@ function setup_memory!(state::PVMState, input::Vector{UInt8}, ro_data::Vector{UI
     heap_base_stack = heap_base_stack + UInt64(((length(rw_data) + PAGE_SIZE - 1) ÷ PAGE_SIZE) * PAGE_SIZE)
 
     # [SP+32] = 0 (already zero)
-    # [SP+40] = 0 (already zero, for r7=0)
-    # [SP+48] = heap_base (so r9 >= 32)
+    # [SP+40] = heap_base (so r9 >= 32)
     for i in 0:7
-        state.memory.data[sp + 48 + i + 1] = UInt8((heap_base_stack >> (8*i)) & 0xFF)
+        state.memory.data[sp + 40 + i + 1] = UInt8((heap_base_stack >> (8*i)) & 0xFF)
     end
+    # [SP+48] = 0 (already zero, for r7=0)
     # [SP+56] = input_len
     for i in 0:7
         state.memory.data[sp + 56 + i + 1] = UInt8((input_len >> (8*i)) & 0xFF)

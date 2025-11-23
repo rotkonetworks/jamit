@@ -142,12 +142,37 @@ function compare_states(expected::State, actual::State)::Bool
         end
     end
 
-    # Compare privileges
-    if expected.privileges != actual.privileges
+    # Compare privileges (compare fields individually to avoid struct comparison issues)
+    priv_match = expected.privileges.manager == actual.privileges.manager &&
+                 expected.privileges.delegator == actual.privileges.delegator &&
+                 expected.privileges.registrar == actual.privileges.registrar &&
+                 expected.privileges.assigners == actual.privileges.assigners &&
+                 expected.privileges.staging_set == actual.privileges.staging_set &&
+                 expected.privileges.auth_queue == actual.privileges.auth_queue &&
+                 expected.privileges.always_access == actual.privileges.always_access
+    if !priv_match
         println("  ❌ Privileges mismatch:")
-        println("     Expected manager: $(expected.privileges.manager), Got: $(actual.privileges.manager)")
-        println("     Expected delegator: $(expected.privileges.delegator), Got: $(actual.privileges.delegator)")
-        println("     Expected registrar: $(expected.privileges.registrar), Got: $(actual.privileges.registrar)")
+        if expected.privileges.manager != actual.privileges.manager
+            println("     manager: expected $(expected.privileges.manager), got $(actual.privileges.manager)")
+        end
+        if expected.privileges.delegator != actual.privileges.delegator
+            println("     delegator: expected $(expected.privileges.delegator), got $(actual.privileges.delegator)")
+        end
+        if expected.privileges.registrar != actual.privileges.registrar
+            println("     registrar: expected $(expected.privileges.registrar), got $(actual.privileges.registrar)")
+        end
+        if expected.privileges.assigners != actual.privileges.assigners
+            println("     assigners: expected $(length(expected.privileges.assigners)), got $(length(actual.privileges.assigners))")
+        end
+        if expected.privileges.staging_set != actual.privileges.staging_set
+            println("     staging_set: expected $(length(expected.privileges.staging_set)), got $(length(actual.privileges.staging_set))")
+        end
+        if expected.privileges.auth_queue != actual.privileges.auth_queue
+            println("     auth_queue: expected $(length(expected.privileges.auth_queue)), got $(length(actual.privileges.auth_queue))")
+        end
+        if expected.privileges.always_access != actual.privileges.always_access
+            println("     always_access: expected $(length(expected.privileges.always_access)), got $(length(actual.privileges.always_access))")
+        end
         all_match = false
     else
         println("  ✓ Privileges match")
