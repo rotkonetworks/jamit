@@ -145,9 +145,9 @@ function compare_states(expected::State, actual::State)::Bool
     # Compare privileges
     if expected.privileges != actual.privileges
         println("  ❌ Privileges mismatch:")
-        println("     Expected bless: $(expected.privileges.bless), Got: $(actual.privileges.bless)")
-        println("     Expected assign: $(expected.privileges.assign), Got: $(actual.privileges.assign)")
-        println("     Expected designate: $(expected.privileges.designate), Got: $(actual.privileges.designate)")
+        println("     Expected manager: $(expected.privileges.manager), Got: $(actual.privileges.manager)")
+        println("     Expected delegator: $(expected.privileges.delegator), Got: $(actual.privileges.delegator)")
+        println("     Expected registrar: $(expected.privileges.registrar), Got: $(actual.privileges.registrar)")
         all_match = false
     else
         println("  ✓ Privileges match")

@@ -2042,20 +2042,23 @@ function execute(program::Vector{UInt8}, input::Vector{UInt8}, gas::UInt64, cont
     rw_data_start_reg = UInt32(2 * ZONE_SIZE) + rnq_reg(UInt32(length(ro_data)))
     heap_base = rw_data_start_reg + rnp_reg(UInt32(length(rw_data)))
 
+    # Use 0x100000000 instead of 2^32 to avoid integer overflow
+    TWO_32 = UInt64(0x100000000)
+
     registers = zeros(UInt64, 13)
     if r0_value !== nothing
         # For accumulate, r0 might be timeslot or other context
         registers[1] = UInt64(r0_value)
     else
-        registers[1] = UInt64(2^32 - 2^16)  # r0 default
+        registers[1] = TWO_32 - UInt64(0x10000)  # r0 default = 2^32 - 2^16
     end
-    registers[2] = UInt64(2^32 - 2*ZONE_SIZE - MAX_INPUT)  # r1/SP
+    registers[2] = TWO_32 - UInt64(2*ZONE_SIZE) - UInt64(MAX_INPUT)  # r1/SP
     # Per graypaper Y function (eq:registers):
     # r7 = 2^32 - ZONE_SIZE - MAX_INPUT (argument pointer)
     # r8 = len(input) (argument length)
     # r6 = heap_base (test-service ABI expects writable memory base)
     registers[7] = UInt64(heap_base)  # r6 = heap_base for test-service ABI
-    registers[8] = UInt64(2^32 - ZONE_SIZE - MAX_INPUT)  # r7 (input address)
+    registers[8] = TWO_32 - UInt64(ZONE_SIZE) - UInt64(MAX_INPUT)  # r7 (input address)
     registers[9] = UInt64(length(input))  # r8 = input length per graypaper
 
     # initialize state
