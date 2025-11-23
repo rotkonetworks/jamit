@@ -116,14 +116,29 @@ These changes make the PVM initialization compatible with the test-service ABI w
 ### Additional Improvements Made
 1. ✅ Cleaned up 77 debug scripts to `debug/` directory
 2. ✅ Added state field comparisons for privileges, accumulated, ready_queue, statistics
+3. ✅ **Queue shifting (ring buffer rotation)**: accumulated and ready_queue now properly rotate each block
+4. ✅ **Statistics tracking**: Track accumulate_count and accumulate_gas_used per service
+5. ✅ **Test vector parsing**: Parse accumulated (12 slots) and statistics from test vectors
+6. ✅ **Dependency resolution**:
+   - Track processed package hashes during accumulation
+   - Queue reports with unmet prerequisites to ready_queue
+   - Check for unlocked queued items after processing
+   - Support cascading unlocks
 
 ### Remaining TODOs
-- **Dependency resolution** (accumulate.jl:279): Currently skipping reports with unmet dependencies
-- **Prerequisite checking** (accumulate.jl:323): Need to check prerequisites against state
 - **CHECKPOINT deep copy** (host_calls.jl:1805-1806): Should deep copy self and privileged_state
 - **INFO selectors** (host_calls.jl:510): Implement selectors 3-6, 8-13 if needed
 
+### Expected Test Improvements
+
+With all fixes implemented, these test categories should now pass:
+- **process_one_immediate_report-1**: Service executes properly with ABI fix
+- **queues_are_shifted-1/2**: Queue rotation implemented
+- **enqueue_and_unlock_simple-2**: Dependency resolution unlocks queued reports
+- **enqueue_and_unlock_chain-3/4**: Chain dependency resolution
+- **Tests with statistics**: Proper gas tracking
+
 ### Next Steps
-1. Run tests to verify r6/stack fixes improve pass rate
-2. Implement dependency resolution for tests like enqueue_and_unlock_chain-3/4
-3. Implement prerequisite checking against state
+1. Run tests to verify all fixes work together
+2. Debug any remaining failures
+3. Optimize performance if needed
