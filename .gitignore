@@ -11,3 +11,4 @@ src/pvm/test_export_simple.jl
 src/pvm/test_export_working.jl
 src/pvm/test_host_calls_debug.jl
 graypaper/
+debug/
