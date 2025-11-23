@@ -2347,6 +2347,13 @@ function setup_memory!(state::PVMState, input::Vector{UInt8}, ro_data::Vector{UI
     for i in 0:7
         state.memory.data[sp + 56 + i + 1] = UInt8((input_len >> (8*i)) & 0xFF)
     end
+
+    # Debug: verify stack initialization was written
+    val40 = sum(UInt64(state.memory.data[sp + 40 + i + 1]) << (8*i) for i in 0:7)
+    val48 = sum(UInt64(state.memory.data[sp + 48 + i + 1]) << (8*i) for i in 0:7)
+    val56 = sum(UInt64(state.memory.data[sp + 56 + i + 1]) << (8*i) for i in 0:7)
+    println("  [STACK INIT] SP=0x$(string(sp, base=16))")
+    println("  [STACK INIT] [SP+40]=0x$(string(val40, base=16)), [SP+48]=0x$(string(val48, base=16)), [SP+56]=$val56")
 end
 
 function extract_output(state::PVMState)
