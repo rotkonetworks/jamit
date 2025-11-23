@@ -13,7 +13,7 @@ struct State
     entropy::Blob
     accounts::Dict{ServiceId, ServiceAccount}
     privileges::PrivilegedState
-    accumulated::Dict{ServiceId, Blob}
+    accumulated::Vector{Vector{Any}}  # 12 slots, each with accumulated items
     ready_queue::Vector{Any}
     statistics::Vector{Any}
     validators::Vector{Any}
@@ -233,16 +233,33 @@ function load_state_from_json(json_data)::State
         end
     end
 
-    # TODO: Parse other state fields (accumulated, statistics, etc.)
+    # Parse accumulated (12 slots, each with list of accumulated items)
+    accumulated = Vector{Vector{Any}}()
+    if haskey(json_data, :accumulated)
+        for slot_items in json_data[:accumulated]
+            push!(accumulated, collect(slot_items))
+        end
+    else
+        # Default: 12 empty slots
+        accumulated = [Vector{Any}() for _ in 1:12]
+    end
+
+    # Parse statistics (service activity records)
+    statistics = Vector{Any}()
+    if haskey(json_data, :statistics)
+        for stat_entry in json_data[:statistics]
+            push!(statistics, stat_entry)
+        end
+    end
 
     return State(
         slot,
         entropy,
         accounts,
         privileges,
-        Dict{ServiceId, Vector{UInt8}}(),  # accumulated (placeholder)
-        ready_queue,  # parsed ready_queue
-        Vector{Any}(),  # statistics (placeholder)
+        accumulated,
+        ready_queue,
+        statistics,
         Vector{Any}(),  # validators (placeholder)
         UInt32(0),      # epoch
         UInt32(0)       # validators_next_epoch

@@ -67,12 +67,12 @@ function execute_accumulate(
     account::ServiceAccount,
     state::State,
     current_slot::TimeSlot
-)::Tuple{ServiceAccount, Dict{ServiceId, ServiceAccount}, Bool}
+)::Tuple{ServiceAccount, Dict{ServiceId, ServiceAccount}, Bool, UInt64}
     # Get service code from preimages
     if !haskey(account.preimages, work_result.code_hash)
         # Code not available
         println("  [ACCUMULATE] Code not available for hash $(bytes2hex(work_result.code_hash))")
-        return (account, state.accounts, false)
+        return (account, state.accounts, false, UInt64(0))
     end
 
     service_code = account.preimages[work_result.code_hash]
@@ -137,7 +137,7 @@ function execute_accumulate(
     # If refine succeeded (ok), pass the result; if it failed (error), skip accumulate
     if !haskey(work_result.result, :ok)
         # Refine failed - skip accumulate
-        return (account, state.accounts, false)
+        return (account, state.accounts, false, UInt64(0))
     end
 
     # Per graypaper: for accumulate, input = encode{timeslot, service_id, len(operand_tuples)}
@@ -184,16 +184,16 @@ function execute_accumulate(
             # Do NOT update last_acc on exceptional exit
             if implications.exceptional_state !== nothing
                 # Use the exceptional state (imY) - state at last checkpoint
-                return (implications.exceptional_state.self, implications.exceptional_state.accounts, true)
+                return (implications.exceptional_state.self, implications.exceptional_state.accounts, true, gas_used)
             else
                 # No exceptional state means service failed before checkpoint
                 # Return original account unchanged
-                return (account, state.accounts, false)
+                return (account, state.accounts, false, gas_used)
             end
         elseif status == PVM.FAULT
             # Memory fault - use imX (current state) with work done before fault
             # Do NOT update last_acc on fault
-            return (implications.self, implications.accounts, true)
+            return (implications.self, implications.accounts, true, gas_used)
         elseif status == PVM.HALT
             # Normal exit - use imX state
             # Update last_acc to current slot (graypaper: accountspostxfer)
@@ -213,10 +213,10 @@ function execute_accumulate(
                 UInt32(current_slot),  # Update last_acc to current slot
                 implications.self.parent
             )
-            return (updated_account, implications.accounts, true)
+            return (updated_account, implications.accounts, true, gas_used)
         else
             # Unknown status - return unchanged account
-            return (account, state.accounts, false)
+            return (account, state.accounts, false, gas_used)
         end
     catch e
         # PVM exception error
@@ -246,7 +246,7 @@ function execute_accumulate(
             Base.show_backtrace(stdout, catch_backtrace()[1:min(10, length(catch_backtrace()))])
             println()
         end
-        return (account, state.accounts, false)
+        return (account, state.accounts, false, UInt64(0))
     end
 end
 
@@ -259,6 +259,33 @@ function process_accumulate(
 
     # Start with current state
     new_accounts = copy(state.accounts)
+
+    # Shift queues (ring buffer rotation) - move slot 0 to end, shift others down
+    # accumulated: 12 slots, each with items
+    new_accumulated = Vector{Vector{Any}}()
+    if length(state.accumulated) >= 12
+        # Shift: [1:end] becomes [0:end-1], slot 0 gets current slot's items
+        for i in 2:12
+            push!(new_accumulated, copy(state.accumulated[i]))
+        end
+        push!(new_accumulated, Vector{Any}())  # Current slot starts empty
+    else
+        new_accumulated = [Vector{Any}() for _ in 1:12]
+    end
+
+    # Shift ready_queue similarly
+    new_ready_queue = Vector{Any}()
+    if length(state.ready_queue) >= 12
+        for i in 2:12
+            push!(new_ready_queue, state.ready_queue[i])
+        end
+        push!(new_ready_queue, nothing)  # Current slot starts empty
+    else
+        new_ready_queue = [nothing for _ in 1:12]
+    end
+
+    # Track statistics for this block
+    service_stats = Dict{ServiceId, Dict{Symbol, UInt64}}()
 
     # Process ready_queue items with no dependencies
     # Ready queue contains work reports that were previously queued due to unmet prerequisites
@@ -303,11 +330,22 @@ function process_accumulate(
 
             # Execute PVM accumulate invocation
             # println("  [ACCUMULATE] Processing queued work for service $(work_result.service_id)")
-            updated_account, updated_accounts, success = execute_accumulate(work_result, parsed_report, account, state, slot)
+            updated_account, updated_accounts, success, gas_used = execute_accumulate(work_result, parsed_report, account, state, slot)
             if success
                 # Merge updated accounts (includes deletions from EJECT)
                 new_accounts = updated_accounts
                 new_accounts[work_result.service_id] = updated_account
+
+                # Track statistics for queued items too
+                sid = work_result.service_id
+                if !haskey(service_stats, sid)
+                    service_stats[sid] = Dict{Symbol, UInt64}(
+                        :accumulate_count => 0,
+                        :accumulate_gas_used => 0
+                    )
+                end
+                service_stats[sid][:accumulate_count] += 1
+                service_stats[sid][:accumulate_gas_used] += gas_used
             end
         end
     end
@@ -348,24 +386,55 @@ function process_accumulate(
             end
 
             # Execute PVM accumulate invocation
-            updated_account, updated_accounts, success = execute_accumulate(work_result, report, account, state, slot)
+            updated_account, updated_accounts, success, gas_used = execute_accumulate(work_result, report, account, state, slot)
             if success
                 # Merge updated accounts (includes deletions from EJECT)
                 new_accounts = updated_accounts
                 new_accounts[work_result.service_id] = updated_account
+
+                # Track statistics
+                sid = work_result.service_id
+                if !haskey(service_stats, sid)
+                    service_stats[sid] = Dict{Symbol, UInt64}(
+                        :accumulate_count => 0,
+                        :accumulate_gas_used => 0
+                    )
+                end
+                service_stats[sid][:accumulate_count] += 1
+                service_stats[sid][:accumulate_gas_used] += gas_used
             end
         end
     end
 
-    # Build new state with updated slot and accounts
+    # Build statistics array from tracked stats
+    new_statistics = Vector{Any}()
+    for (sid, stats) in service_stats
+        push!(new_statistics, Dict(
+            :id => sid,
+            :record => Dict(
+                :provided_count => 0,
+                :provided_size => 0,
+                :refinement_count => 0,
+                :refinement_gas_used => 0,
+                :imports => 0,
+                :extrinsic_count => 0,
+                :extrinsic_size => 0,
+                :exports => 0,
+                :accumulate_count => stats[:accumulate_count],
+                :accumulate_gas_used => stats[:accumulate_gas_used]
+            )
+        ))
+    end
+
+    # Build new state with updated slot, accounts, shifted queues, and statistics
     new_state = State(
         slot,  # Advance to input slot
         state.entropy,
         new_accounts,
         state.privileges,
-        state.accumulated,
-        state.ready_queue,
-        state.statistics,
+        new_accumulated,  # Shifted accumulated queue
+        new_ready_queue,  # Shifted ready queue
+        new_statistics,   # Updated statistics
         state.validators,
         state.epoch,
         state.validators_next_epoch
