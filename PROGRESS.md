@@ -113,7 +113,17 @@
 
 These changes make the PVM initialization compatible with the test-service ABI while remaining compliant with graypaper memory layout.
 
+### Additional Improvements Made
+1. ✅ Cleaned up 77 debug scripts to `debug/` directory
+2. ✅ Added state field comparisons for privileges, accumulated, ready_queue, statistics
+
+### Remaining TODOs
+- **Dependency resolution** (accumulate.jl:279): Currently skipping reports with unmet dependencies
+- **Prerequisite checking** (accumulate.jl:323): Need to check prerequisites against state
+- **CHECKPOINT deep copy** (host_calls.jl:1805-1806): Should deep copy self and privileged_state
+- **INFO selectors** (host_calls.jl:510): Implement selectors 3-6, 8-13 if needed
+
 ### Next Steps
-1. Run tests to verify fixes improve pass rate
-2. Investigate any remaining failures
-3. Clean up debugging artifacts from root directory
+1. Run tests to verify r6/stack fixes improve pass rate
+2. Implement dependency resolution for tests like enqueue_and_unlock_chain-3/4
+3. Implement prerequisite checking against state
