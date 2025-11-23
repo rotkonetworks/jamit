@@ -2023,7 +2023,25 @@ function execute(program::Vector{UInt8}, input::Vector{UInt8}, gas::UInt64, cont
     # r1 (SP) = 2^32 - 2*ZONE_SIZE - MAX_INPUT
     # r7 = 2^32 - ZONE_SIZE - MAX_INPUT (input address)
     # r8 = len(input) (input length)
+    # r6 = heap_base (start of writable memory) - needed by test-service ABI
     # others = 0
+
+    # Helper functions for memory layout calculation
+    function rnq_reg(x::UInt32)::UInt32
+        zone_mask = UInt32(ZONE_SIZE - 1)
+        return (x + zone_mask) & ~zone_mask
+    end
+    function rnp_reg(x::UInt32)::UInt32
+        page_mask = UInt32(PAGE_SIZE - 1)
+        return (x + page_mask) & ~page_mask
+    end
+
+    # Calculate heap_base per graypaper memory layout
+    # rw_data starts at 2*ZONE_SIZE + rnq(len(ro_data))
+    # heap starts after rw_data
+    rw_data_start_reg = UInt32(2 * ZONE_SIZE) + rnq_reg(UInt32(length(ro_data)))
+    heap_base = rw_data_start_reg + rnp_reg(UInt32(length(rw_data)))
+
     registers = zeros(UInt64, 13)
     if r0_value !== nothing
         # For accumulate, r0 might be timeslot or other context
@@ -2035,7 +2053,8 @@ function execute(program::Vector{UInt8}, input::Vector{UInt8}, gas::UInt64, cont
     # Per graypaper Y function (eq:registers):
     # r7 = 2^32 - ZONE_SIZE - MAX_INPUT (argument pointer)
     # r8 = len(input) (argument length)
-    # r6 = 0 (graypaper compliant, though test-service may expect different)
+    # r6 = heap_base (test-service ABI expects writable memory base)
+    registers[7] = UInt64(heap_base)  # r6 = heap_base for test-service ABI
     registers[8] = UInt64(2^32 - ZONE_SIZE - MAX_INPUT)  # r7 (input address)
     registers[9] = UInt64(length(input))  # r8 = input length per graypaper
 
@@ -2301,12 +2320,25 @@ function setup_memory!(state::PVMState, input::Vector{UInt8}, ro_data::Vector{UI
     # With r5=0: r10=[SP+32], r7=[SP+40], r9=[SP+48], r8=[SP+56]
     # Checks: r7 != 0 → error, r9 < 32 → error
     #
-    # Leave [SP+32] = 0 (function pointer for r10 - will cause panic but error path is longer)
-    # Leave [SP+40] = 0 for r7=0 (OK status)
-    # Leave [SP+48] = 0 - program takes error path (r9<32) which runs 274 steps before panic
-    # Leave [SP+56] = 0 for r8
-    #
-    # The proper ABI for service 1729 needs to be determined from the JAM SDK
+    # Set [SP+32] = 0 (function pointer for r10)
+    # Set [SP+40] = 0 for r7=0 (pass the r7 != 0 check)
+    # Set [SP+48] = heap_base (so r9 >= 32, pass the r9 < 32 check)
+    # Set [SP+56] = input_len for r8
+
+    # Calculate heap_base for stack initialization
+    heap_base_stack = UInt64(2 * ZONE_SIZE) + UInt64(((length(ro_data) + ZONE_SIZE - 1) ÷ ZONE_SIZE) * ZONE_SIZE)
+    heap_base_stack = heap_base_stack + UInt64(((length(rw_data) + PAGE_SIZE - 1) ÷ PAGE_SIZE) * PAGE_SIZE)
+
+    # [SP+32] = 0 (already zero)
+    # [SP+40] = 0 (already zero, for r7=0)
+    # [SP+48] = heap_base (so r9 >= 32)
+    for i in 0:7
+        state.memory.data[sp + 48 + i + 1] = UInt8((heap_base_stack >> (8*i)) & 0xFF)
+    end
+    # [SP+56] = input_len
+    for i in 0:7
+        state.memory.data[sp + 56 + i + 1] = UInt8((input_len >> (8*i)) & 0xFF)
+    end
 end
 
 function extract_output(state::PVMState)
