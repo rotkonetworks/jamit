@@ -318,30 +318,25 @@ function process_accumulate(
         parsed_report = parse_work_report(queued_report)
 
         # Process each work result in the queued report
+        queued_had_success = false
         for work_result in parsed_report.results
-            # Get service account
             if !haskey(new_accounts, work_result.service_id)
                 continue
             end
-
             account = new_accounts[work_result.service_id]
-
-            # Verify code hash matches
             if account.code_hash != work_result.code_hash
                 continue
             end
 
-            # Execute PVM accumulate invocation
             updated_account, updated_accounts, success, gas_used = execute_accumulate(work_result, parsed_report, account, state, slot)
             if !success
                 continue
             end
 
-            # Merge updated accounts
             new_accounts = updated_accounts
             new_accounts[work_result.service_id] = updated_account
+            queued_had_success = true
 
-            # Track statistics
             sid = work_result.service_id
             if !haskey(service_stats, sid)
                 service_stats[sid] = Dict{Symbol, UInt64}(
@@ -351,8 +346,10 @@ function process_accumulate(
             end
             service_stats[sid][:accumulate_count] += 1
             service_stats[sid][:accumulate_gas_used] += gas_used
+        end
 
-            # Track hash and accumulated
+        # Add to accumulated once per queued item
+        if queued_had_success
             push!(processed_hashes, parsed_report.package_hash)
             if length(new_accumulated) >= 12
                 push!(new_accumulated[12], "0x" * bytes2hex(parsed_report.package_hash))
